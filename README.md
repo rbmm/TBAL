@@ -185,13 +185,13 @@ void StartCmd()
 паролем оказалась строка `_TBAL_{68EDDCF5-0AEB-4C28-A770-AF5302ECA3C9}`
 
 вот мы и получили кое что уникальное, для поиска в google. информации немного, но она есть
-- https://www.passcape.com/index.php?section=blog&cmd=details&id=38
-* https://vztekoverflow.com/2018/07/31/tbal-dpapi-backdoor/
-+ https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/manage/component-updates/winlogon-automatic-restart-sign-on--arso-
+- [DPAPI security flaw in Windows 10](https://www.passcape.com/index.php?section=blog&cmd=details&id=38)
+* [TBAL: an (accidental?) DPAPI Backdoor for local users](https://vztekoverflow.com/2018/07/31/tbal-dpapi-backdoor/)
++ [Winlogon automatic restart sign-on (ARSO)](https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/manage/component-updates/winlogon-automatic-restart-sign-on--arso-)
 
 в принципе практически всё уже описано, но - можно всё таки ещё посмотреть во всех деталях
 
-кто вызывает LsaLogonUser ? как и можно было ожидать - winlogon - всё начинается там. строго говоря, сейчас winlogon не вызывает напрямую LsaLogonUser, а вызывает UMgrLogonUser из usermgrcli, который делает RPC (alpc) вызов в USERMGR.DLL ( живёт в одном из svchost) который уже вызывает LsaLogonUser. зачем это делается, зачем нужен посредник - USERMGR - не знаю. но с принципиальной точки зрения - не важно. инициатор winlogon
+кто вызывает `LsaLogonUser` ? как и можно было ожидать - *winlogon* - всё начинается там. строго говоря, сейчас *winlogon* не вызывает напрямую `LsaLogonUser`, а вызывает `UMgrLogonUser` из `usermgrcli`, который делает *RPC (alpc)* вызов в `USERMGR.DLL` ( живёт в одном из *svchost*) который уже вызывает `LsaLogonUser`. зачем это делается, зачем нужен посредник - ``USERMGR - не знаю. но с принципиальной точки зрения - не важно. инициатор *winlogon*
 
 всё начинается в функции
 
@@ -218,13 +218,13 @@ ULONG AuthenticateUser(
 	int *);
 ```
 
-который в свою очередь вызывает UMgrLogonUser а тот - LsaLogonUser ( в другом процессе)
+который в свою очередь вызывает `UMgrLogonUser` а тот - `LsaLogonUser` ( в другом процессе)
 
 ![Screenshot](AuthenticateUser.png)
 
 после этого вызывается функция 
 
-void [CleanupAutoLogonCredentials](https://github.com/rbmm/TVI/blob/main/DEMO/CleanupAutoLogonCredentials.tvi)(WLSM_GLOBAL_CONTEXT *, ULONG, BOOLEAN);
+`void` [`CleanupAutoLogonCredentials`](https://github.com/rbmm/TVI/blob/main/DEMO/CleanupAutoLogonCredentials.tvi)`(WLSM_GLOBAL_CONTEXT *, ULONG, BOOLEAN);`
 
 эта функция и удаляет значения реестра, с помощью которых и происходит aulologon (+lock)
 до её вызова, реестр выглядит вот  так
