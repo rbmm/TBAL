@@ -2,7 +2,7 @@
 
 но если я делал logoff а затем logon с использованием моего *AuthenticationPackage* - всё было правильно - `THIS_ORGANIZATION_CERTIFICATE` в token groups и имя моего модуля в `SECURITY_LOGON_SESSION_DATA::AuthenticationPackage`. посмотрев лог из своего package, я увидел что сессия, которую я создавал уничтожалась. всё выглядело так, как будто бы происходил не logon а unlock. но каким образом ?
 
-для отладки *LogonUI/winlogon/lsass* процессов, я заменяю в системе *utilman.exe* на *cmd.exe*. уже из этого cmd можно запускать debugger и прочие утилиты. а *utilman.exe* ( то есть cmd.exe ) можно вызвать из LogonUI. запустив debugger после reboot на winlogon desktop, и посмотрев какие процессы запущены, я неожиданно заметил странную вещь ( впервые, хотя до этого точно также запускал debugger десятки или сотни раз) - explorer.exe в terminal session id != 0 уже запущен ! и после входа в систему через свой package, тот же explorer ( process id не изменился). значит дейсвительно происходил unlock а не logon при старте системы. то есть система автоматически сама делала logon и затем lock и при вводе user credentials получался уже unlock, существующей сессии
+для отладки *LogonUI/winlogon/lsass* процессов, я заменяю в системе *utilman.exe* на *cmd.exe*. уже из этого cmd можно запускать debugger и прочие утилиты. а *utilman.exe* ( то есть cmd.exe ) можно вызвать из LogonUI. запустив debugger после reboot на winlogon desktop, и посмотрев какие процессы запущены, я неожиданно заметил странную вещь ( впервые, хотя до этого точно также запускал debugger десятки или сотни раз) - *explorer.exe* в terminal session id != 0 уже запущен и после входа в систему через свой package, тот же explorer ( process id не изменился). значит дейсвительно происходил unlock а не logon при старте системы. то есть система автоматически сама делала logon и затем lock и при вводе user credentials получался уже unlock, существующей сессии
 
 поэксперементировав - я понял что это на самом деле было не всегда так.
 система делала autologon + lock только в том случае если в момент нажатия на shutdown or reboot - в системе был активен некий пользователь. сохранялись данные текущей активной logon session. но если сначала сделать logoff а затем уже shutdown/reboot ( то есть в момент когда нет активного пользователя) - autologon не происходил. не происходил он и при аварийном выключении компа ( просто отключением питания например). очевидно что некие данные записывались и затем использовались при выключении. и брались они из текущей активной (интерактивной) сессии. если такой сессии не было - то ничего не записывалось - и на следующем старте autologon не происходил. очевидно эти данные стирались сразу после autologon
@@ -19,9 +19,11 @@
 
 если мы вводим credentials для user2 - то присходит logon - создание новой сессии, запуск userint, который запускает explorer ( предполагаем что эти программы не заменены в реестре), инициализация explorer.. всё это занимает несколько секунд. и задержка заметна. при этом уже существующая сессия, для user1, так и остаётся висеть в памяти. занимая очевидно при этом память. а также наверно кое какие секреты ( sha1 password hash of user1 например), которые теперь в принципе может получить user2
 
-зачем вообще такое делается ? в чём смысл ? с моей точки зрения - это Speculative execution:
+зачем вообще такое делается ? в чём смысл ? с моей точки зрения - это **Speculative execution**:
 
-Speculative execution is an optimization technique where a computer system performs some task that may not be needed. Work is done before it is known whether it is actually needed, so as to prevent a delay that would have to be incurred by doing the work after it is known that it is needed. If it turns out the work was not needed after all, most changes made by the work are reverted and the results are ignored.
+> Speculative execution is an optimization technique where a computer system performs some task that may not be needed. Work is done before it is known whether it 
+> is actually needed, so as to prevent a delay that would have to be incurred by doing the work after it is known that it is needed. If it turns out the work was 
+> not needed after all, most changes made by the work are reverted and the results are ignored.
 
 фактически система делает (обоснованное) предположение - что если user1 выключил или перезагрузил систему - то тот же самый user1 в неё и войдёт после включения (для персональных компов с одним пользователем - это практически всегда так). ввод пользователем credentials - обычно занимает несколько секунд. система же, вместо того что бы простаивать эти секунды, ожидая ввода - сразу запускает сессию для user1 ( запуск userinit который запускает explorer). к моменту когда пользователь ввёл свой пароль (или что то другое) - как правило explorer и user desktop уже готовы. всё что нужно сделать после проверки credentials - переключить desktop - from winlogon to default. в итоге мы имеем выигрыш в несколько секунд
 
@@ -29,9 +31,9 @@ Speculative execution is an optimization technique where a computer system perfo
 
 но как вообще это всё называется ? ведь наверняка это известная (хоть и мало) вещь. как найти информацию о ней в google ? по каким совам искать ? не очевидно. поэтому я решил исследовал сам процесс в деталях - как происходит это autologon.
 
-раз сессию создаёт NTLM - значит LsaApLogonUserEx2 вызывается из msv1_0. я поставил hook на эту функцию, из своего auth package, и из хука запустил cmd и стал ждать, пока дебагер приатачится к нашему (lsass) процессу. 
+раз сессию создаёт `NTLM` - значит `LsaApLogonUserEx2` вызывается из `msv1_0`. я поставил hook на эту функцию, из своего auth package, и из хука запустил cmd и стал ждать, пока дебагер приатачится к нашему (lsass) процессу. 
 
-вот примерно такой код можно использовать для запуска cmd из lsass
+вот примерно такой код можно использовать для запуска *cmd* из *lsass*
 
 ```
 void StartCmd(ULONG SessionId, PCWSTR lpApplicationName, PCWSTR lpCurrentDirectory)
@@ -183,9 +185,9 @@ void StartCmd()
 паролем оказалась строка `_TBAL_{68EDDCF5-0AEB-4C28-A770-AF5302ECA3C9}`
 
 вот мы и получили кое что уникальное, для поиска в google. информации немного, но она есть
-https://www.passcape.com/index.php?section=blog&cmd=details&id=38
-https://vztekoverflow.com/2018/07/31/tbal-dpapi-backdoor/
-https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/manage/component-updates/winlogon-automatic-restart-sign-on--arso-
+- https://www.passcape.com/index.php?section=blog&cmd=details&id=38
+* https://vztekoverflow.com/2018/07/31/tbal-dpapi-backdoor/
++ https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/manage/component-updates/winlogon-automatic-restart-sign-on--arso-
 
 в принципе практически всё уже описано, но - можно всё таки ещё посмотреть во всех деталях
 
