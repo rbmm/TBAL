@@ -180,7 +180,7 @@ void StartCmd()
 ![Screenshot](DefaultPassword.png)
 
 
-паролем оказалась строка _TBAL_{68EDDCF5-0AEB-4C28-A770-AF5302ECA3C9}
+паролем оказалась строка `_TBAL_{68EDDCF5-0AEB-4C28-A770-AF5302ECA3C9}`
 
 вот мы и получили кое что уникальное, для поиска в google. информации немного, но она есть
 https://www.passcape.com/index.php?section=blog&cmd=details&id=38
@@ -235,7 +235,7 @@ void [CleanupAutoLogonCredentials](https://github.com/rbmm/TVI/blob/main/DEMO/Cl
 
 and
 
-![Screenshot](deletes_any_private_data.png)
+![Screenshot](delete_private_data.png)
 
 последним удаляется ForceAutoLockOnLogon, который и проверяется изначально в WLGeneric_Authenticating_Execute
 
