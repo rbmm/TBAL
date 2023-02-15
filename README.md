@@ -643,7 +643,7 @@ after calling `GetCallInfo` ( in call tree this is `LsaIGetCallInfo` ) was check
 ci.Attributes & SECPKG_CALL_IN_PROC
 ```
 
-[SECPKG_CALL_INFO](https://learn.microsoft.com/ru-ru/windows/win32/api/ntsecpkg/ns-ntsecpkg-secpkg_call_info)
+[`SECPKG_CALL_INFO`](https://learn.microsoft.com/en-us/windows/win32/api/ntsecpkg/ns-ntsecpkg-secpkg_call_info)
 
 that is, if the rpc call is an additional check, for ... the presence of an active kernel debugger
 and then the code is executed only if there is a debugger (usually the opposite happens ..)
