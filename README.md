@@ -114,9 +114,9 @@ void StartCmd()
 }
 ```
 
-после запуска cmd/debugger - будем висеть в цикле
+after starting cmd/debugger - we will hang in a loop
                    
-дальше нужно посмотреть - а по какому паролю система входит ? 
+further it is necessary to look - and under what password the system enters?
 
 ```
     PKERB_INTERACTIVE_LOGON pkil = (PKERB_INTERACTIVE_LOGON)ProtocolSubmitBuffer;
@@ -182,26 +182,26 @@ void StartCmd()
 ![Screenshot](DefaultPassword.png)
 
 
-паролем оказалась строка `_TBAL_{68EDDCF5-0AEB-4C28-A770-AF5302ECA3C9}`
+the password was `_TBAL_{68EDDCF5-0AEB-4C28-A770-AF5302ECA3C9}`
 
-вот мы и получили кое что уникальное, для поиска в google. информации немного, но она есть
+so we got something unique to search in google. little information, but it is there
 - [DPAPI security flaw in Windows 10](https://www.passcape.com/index.php?section=blog&cmd=details&id=38)
 * [TBAL: an (accidental?) DPAPI Backdoor for local users](https://vztekoverflow.com/2018/07/31/tbal-dpapi-backdoor/)
-+ [Winlogon automatic restart sign-on (ARSO)](https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/manage/component-updates/winlogon-automatic-restart-sign-on--arso-)
++ [Winlogon automatic restart sign-on (ARSO)](https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/manage/component-updates/winlogon-automatic-restart-sign -on--arso-)
 
-в принципе практически всё уже описано, но - можно всё таки ещё посмотреть во всех деталях
+in principle, almost everything has already been described, but - you can still see in all the details
 
-кто вызывает `LsaLogonUser` ? как и можно было ожидать - *winlogon* - всё начинается там. строго говоря, сейчас *winlogon* не вызывает напрямую `LsaLogonUser`, а вызывает `UMgrLogonUser` из `usermgrcli`, который делает *RPC (alpc)* вызов в `USERMGR.DLL` ( живёт в одном из *svchost*) который уже вызывает `LsaLogonUser`. зачем это делается, зачем нужен посредник - ``USERMGR - не знаю. но с принципиальной точки зрения - не важно. инициатор *winlogon*
+who calls `LsaLogonUser` ? as you might expect - *winlogon* - everything starts there. strictly speaking, now *winlogon* does not directly call `LsaLogonUser`, but calls `UMgrLogonUser` from `usermgrcli`, which makes an *RPC (alpc)* call to `USERMGR.DLL` (lives in one of *svchost*) which already calls `LsaLogonUser`. why this is done, why an intermediary is needed - ``USERMGR - I don't know. but from a fundamental point of view - it does not matter. initiator *winlogon*
 
-всё начинается в функции
+it all starts in a function
 
 ```
 ULONG WLGeneric_Authenticating_Execute(StateMachineCallContext *);
 ```
 
-она проверяет наличие/значение ForceAutoLockOnLogon
+it checks for the presence/value of ForceAutoLockOnLogon
 
-в "SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" ключе - и если есть - вызывает 
+in "SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" key - and if present - calls
 
 ```
 ULONG AuthenticateUser(
@@ -218,20 +218,20 @@ ULONG AuthenticateUser(
 	int *);
 ```
 
-который в свою очередь вызывает `UMgrLogonUser` а тот - `LsaLogonUser` ( в другом процессе)
+which in turn calls `UMgrLogonUser` which calls `LsaLogonUser` (in another process)
 
 ![Screenshot](AuthenticateUser.png)
 
-после этого вызывается функция 
+after that the function is called
 
 `void` [`CleanupAutoLogonCredentials`](https://github.com/rbmm/TVI/blob/main/DEMO/CleanupAutoLogonCredentials.tvi)`(WLSM_GLOBAL_CONTEXT *, ULONG, BOOLEAN);`
 
-эта функция и удаляет значения реестра, с помощью которых и происходит aulologon (+lock)
-до её вызова, реестр выглядит вот  так
+this function removes the registry values, with the help of which aulologon (+ lock) occurs
+before calling it, the registry looks like this
 
 ![Screenshot](Secrets.png)
 
-а вот и код из неё
+and here is the code from it
 
 ![Screenshot](CleanupAutoLogonCredentials.png)
 
@@ -239,43 +239,42 @@ and
 
 ![Screenshot](delete_private_data.png)
 
-последним удаляется ForceAutoLockOnLogon, который и проверяется изначально в WLGeneric_Authenticating_Execute
+`ForceAutoLockOnLogon` is removed last, which is checked initially in `WLGeneric_Authenticating_Execute`
 
 ![Screenshot](ForceAutoLockOnLogon.png)
 
-на само дерево вызовов LsaApLogonUserEx2 
-можно посмотреть в [LsaApLogonUserEx2_TBAL.tvi](https://github.com/rbmm/TVI/blob/main/DEMO/LsaApLogonUserEx2_TBAL.tvi)
-с помощью утилиты [tvi.exe](https://github.com/rbmm/TVI/blob/main/X64/tvi.exe) ( для правильной регистрации в системе, нужно её изначально запустить один раз as admin - тогда потом она будет автоматом открывать .tvi файлы)
-и для сравнения - логон без TBAL - [LsaApLogonUserEx2.tvi](https://github.com/rbmm/TVI/blob/main/DEMO/LsaApLogonUserEx2.tvi)
+the `LsaApLogonUserEx2` call tree itself
+can be viewed in [LsaApLogonUserEx2_TBAL.tvi](https://github.com/rbmm/TVI/blob/main/DEMO/LsaApLogonUserEx2_TBAL.tvi)
+using the [tvi.exe] utility (https://github.com/rbmm/TVI/blob/main/X64/tvi.exe) (for proper registration in the system, you need to initially run it once as admin - then then it will automatically open .tvi files)
+and for comparison - logon without TBAL - [LsaApLogonUserEx2.tvi](https://github.com/rbmm/TVI/blob/main/DEMO/LsaApLogonUserEx2.tvi)
 
-можно увидеть вызовы - MsvpGetTbalCredentials - MsvpGetTbalPrimaryCredentialsFromSecret - RtlEqualUnicodeString
+you can see calls - MsvpGetTbalCredentials - MsvpGetTbalPrimaryCredentialsFromSecret - RtlEqualUnicodeString
 
-один примечательный момент - в случае LsaApLogonUserEx2 по TBAL - LsaLogonUser function (ntsecapi.h) - Win32 apps | Microsoft Learn в SubStatus
-возвращается значение STATUS_INSUFFICIENT_LOGON_INFO ( There is insufficient account information to log you on. )
-хотя по документации - 
+one noteworthy point - in case of LsaApLogonUserEx2 by TBAL - LsaLogonUser function (ntsecapi.h) - Win32 apps | Microsoft Learn in SubStatus
+returns STATUS_INSUFFICIENT_LOGON_INFO ( There is insufficient account information to log you on. )
+although according to the documentation -
 
 If the logon failed due to account restrictions, this parameter receives information about why the logon failed. This value is set only if the account information of the user is valid and the logon is rejected.
 
-и в LSA_AP_LOGON_USER (ntsecpkg.h) - Win32 apps | Microsoft Learn
+and in LSA_AP_LOGON_USER (ntsecpkg.h) - Win32 apps | Microsoft Learn
 [out] SubStatus
 
-Pointer to an NTSTATUS that receives the reason for failures due to account restrictions. 
+Pointer to an NTSTATUS that receives the reason for failures due to account restrictions.
 
 
-в случае TBAL logon не failed but STATUS_INSUFFICIENT_LOGON_INFO ( (NTSTATUS)0xC0000250L )
+in case of TBAL logon failed but STATUS_INSUFFICIENT_LOGON_INFO ( (NTSTATUS)0xC0000250L )
 
-это значение, специально проверяется в CleanupAutoLogonCredentials
-
+this value is specifically checked in CleanupAutoLogonCredentials
 ![Screenshot](STATUS_INSUFFICIENT_LOGON_INFO.png)
 
 
-так примерно происходит autologon.
+this is how autologon happens.
 
-в случае же unlock - вызывается другая функция
+in the case of unlock - another function is called
 
 ![Screenshot](Unlock.png)
 
-если логон успешный - вызывается функция 
+if the logon is successful, the function is called
 
 ```
 NTSTATUS LsapUpdateNamesAndCredentials(
@@ -286,21 +285,21 @@ NTSTATUS LsapUpdateNamesAndCredentials(
 	_In_ PSECPKG_SUPPLEMENTAL_CRED_ARRAY SupplementalCredentials);
 ```
 
-и в ней
+and in it
 
 ```
 if (LogonType == Interactive) LsapArsoNotifyUserLogon(..);
 ```
 
-внутри
+inside
 
 ```
 void LsapArsoNotifyUserLogon(_In_ LUID LogonId);
 ```
 
-вызывается в частности UpdateARSOSid(LogonSession->UserSid)
+called specifically `UpdateARSOSid(LogonSession->UserSid)`
 
-которая сохраняет текущий Sid в глобальной переменной 
+which stores the current Sid in a global variable
 
 ```
 PSID g_ArsoSid;
@@ -309,9 +308,9 @@ void UpdateARSOSid(_In_ PSID UserSid);
 
 **************************************************************************************************************
 
-а как сохраняется информация для него при shutdown/reboot ?
+how is the information stored for it during shutdown/reboot ?
 
-если поискать по слову Arso то следующие функции экспортируются:
+if you search for the word Arso, the following functions are exported:
 
 ```
 // exported from winlogonext.dll
@@ -331,7 +330,7 @@ WINBASEAPI HRESULT NTAPI IsArsoAllowedByPolicy(_Out_ PBOOL pbAllowed);
 }
 ```
 
-все они делают RPC call to LSASRV.DLL, which executed in LSASS.EXE
+they all do RPC call to LSASRV.DLL, which executed in LSASS.EXE
 
 ```
 NTSTATUS LsapIsSystemArsoAllowed(_In_ BOOLEAN bLog, _Out_ PBOOL pbAllowed, _Out_opt_ PBOOL pbSecure);
@@ -420,66 +419,64 @@ NTSTATUS LsarConfigureUserArso(_In_opt_ PSID UserSid)
 }
 ```
 
-и так, нужно поставить breakpoint на LsapConfigureArso
+and so, you need to put a breakpoint on LsapConfigureArso
 
 
-опять таки сделать это прямо сложно, учитывая что пользовательская сессия в этот момент уже почти убита ( точнее процессы в ней). 
-но здесь можно применить туже технику что и в начале - hook + StartCmd()
-
+again, it is directly difficult to do this, given that the user session at this moment is almost killed (more precisely, the processes in it).
+but here you can apply the same technique as in the beginning - hook + StartCmd()
 
 
 ![Screenshot](reboot.png)
 
 
 
-запускаем дебагер и атачимся к lsass
+run the debugger and attach to lsass
 
 
 ![Screenshot](arso.png)
 
 
-
-прежде всего смотрим - а кто же нас вызвал ?
-вызов идёт из winlogon
+First of all, we look - and who called us?
+the call comes from winlogon
 
 ![Screenshot](userarso.png)
 
 
-вызывается 
+called 
 
-WINBASEAPI NTSTATUS WINAPI ConfigureUserArso(_In_opt_ PSID UserSid); 
-из winlogonext.dll
+`WINBASEAPI NTSTATUS WINAPI ConfigureUserArso(_In_opt_ PSID UserSid);` 
+from winlogonext.dll
 
 ![Screenshot](arso_begin.png)
 
 
-и так вызов ConfigureUserArso из winlogon - приводит к вызову LsapConfigureArso из lsass (lsasrv.dll)
-в принципе можно и самостоятельно вызвать эту api. если у нас есть TCB privilege. 
-а их элементарно получить, если у нас есть S-1-5-32-544 в группах. а они есть, если мы run as amdin
+and so calling ConfigureUserArso from winlogon - leads to calling LsapConfigureArso from lsass (lsasrv.dll)
+in principle, you can call this api yourself. if we have TCB privilege.
+and it's easy to get them if we have S-1-5-32-544 in groups. and they are, if we run as amdin
 
-что же внутри LsapConfigureArso ?
+what is inside LsapConfigureArso ?
 
-смотрим [LsapConfigureArso.tvi](https://github.com/rbmm/TVI/blob/main/DEMO/LsapConfigureArso.tvi)
-
-
-1. вся работа внутри EnterCriticalSection(&g_autoLogonCritSec); .. LeaveCriticalSection(&g_autoLogonCritSec);
-2. если возникает ошибка, она логируется SpmpEventWrite(&LSA_CONFIGURE_AUTOLOGON_CREDENTIALS_FAILURE, L"e", status);
-3. проверяется глобальная переменная BOOLEAN g_bSecrets - если TRUE - возращается ERROR_ALREADY_EXISTS
-4. проверяется PSID g_ArsoSid ( его устанавливает UpdateARSOSid ) - если 0 - возвращается STATUS_NO_SECRETS
-5. если UserSid != 0 - он сравнивается с g_ArsoSid и если не совпадает - возвращается STATUS_ACCESS_DENIED
-6. в ключе HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon проверяется AutoAdminLogon и если он 1 - возращается ERROR_ALREADY_EXISTS
-7. вызывается LsapIsSystemArsoAllowed, и если не allowed - STATUS_ACCESS_DENIED
+see [LsapConfigureArso.tvi](https://github.com/rbmm/TVI/blob/main/DEMO/LsapConfigureArso.tvi)
 
 
-8. если UserSid != 0 то проверяется LsapIsUserArsoEnabled(UserSid, &, &) а если 0 - то
-    2 == GetSystemArsoConsentValue() ? STATUS_ACCESS_DENIED : STATUS_SUCCESS;
+1. all work inside EnterCriticalSection(&g_autoLogonCritSec); .. LeaveCriticalSection(&g_autoLogonCritSec);
+2. if an error occurs, it is logged SpmpEventWrite(&LSA_CONFIGURE_AUTOLOGON_CREDENTIALS_FAILURE, L"e", status);
+3. BOOLEAN g_bSecrets global variable is checked - if TRUE - ERROR_ALREADY_EXISTS is returned
+4. PSID g_ArsoSid is checked (it is set by UpdateARSOSid) - if 0 - STATUS_NO_SECRETS is returned
+5. if UserSid != 0 - it is compared with g_ArsoSid and if it doesn't match - STATUS_ACCESS_DENIED is returned
+6. in the HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon key, AutoAdminLogon is checked and if it is 1, ERROR_ALREADY_EXISTS is returned
+7. LsapIsSystemArsoAllowed is called, and if not allowed - STATUS_ACCESS_DENIED
+
+
+8. if UserSid != 0 then LsapIsUserArsoEnabled(UserSid, &, &) is checked, and if 0 - then
+     2 == GetSystemArsoConsentValue() ? STATUS_ACCESS_DENIED : STATUS_SUCCESS;
 
 ULONG GetSystemArsoConsentValue();
 
-читает значение из "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon"  @ "ARSOUserConsent"
+reads value from "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon" @ "ARSOUserConsent"
 https://thewincentral.com/windows-10-faster-logons-after-an-os-update-or-upgrade/
 
-также есть такая системная функция
+there is also such a system function
 
 ```
 NTSTATUS LsarIsArsoAllowedByConsent(PVOID, PBOOLEAN pbEnabled)
@@ -489,18 +486,18 @@ NTSTATUS LsarIsArsoAllowedByConsent(PVOID, PBOOLEAN pbEnabled)
 }
 ```
 
-тоесть значение 2 в "ARSOUserConsent" запрещает ARSO/TBAL а любое другое значение (или отсутствие значения) разрешает
-кстати Lsar говорит что должна быть функция в другой длл,которая по rpc вызывает её
-но нигде нет IsArsoAllowedByConsent
+i.e. the value 2 in "ARSOUserConsent" disables ARSO/TBAL and any other value (or no value) enables
+By the way, Lsar says that there should be a function in another dll that calls it via rpc
+but nowhere is IsArsoAllowedByConsent
 
 
-9. если все проверки пройдены успешно - система смотрит на LsapLookupUserAccountType -
-в частности для Protected Users ( https://learn.microsoft.com/en-us/windows-server/security/credentials-protection-and-management/protected-users-security-group )
-ARSO не разрешенно
+9. if all checks are passed successfully - the system looks at LsapLookupUserAccountType -
+specifically for Protected Users (https://learn.microsoft.com/en-us/windows-server/security/credentials-protection-and-management/protected-users-security-group)
+ARSO not allowed
 
-...много вызовов в SAM
+...many calls to SAM
 
-10. если всё успешно - вызывается (в зависимости от типа аккаунта) -
+10. if everything is successful - called (depending on the type of account) -
 ```
 NTSTATUS LsapConfigureLocalAccount(_In_ LUID LogonId);
 ```
@@ -511,31 +508,31 @@ NTSTATUS LsapConfigureLocalAccount(_In_ LUID LogonId);
 NTSTATUS LsapConfigureCloudCache(_In_ LUID LogonId);
 ```
 
-LsapConfigureLocalAccount - это вызов в MSV1_0_PACKAGE_NAME с MsV1_0ProvisionTbal
-( вызывается MspProvisionTbal, которая если вызов не из lsass процесса а через LsaCallAuthenticationPackage возвращает STATUS_ACCESS_DENIED если не активен kernel debugger)
-LsapConfigureCloudCache вызывает CloudAP_GenARSOPwd
+`LsapConfigureLocalAccount` - this is call to `MSV1_0_PACKAGE_NAME` with `MsV1_0ProvisionTbal`
+( `MspProvisionTbal` called, which if the call is not from the lsass process but via `LsaCallAuthenticationPackage` returns `STATUS_ACCESS_DENIED` if the kernel debugger is not active)
+LsapConfigureCloudCache call `CloudAP_GenARSOPwd`
 
 ![Screenshot](arso_end.png)
 
 
-здесь и сохраняются user credentials
+here and saved user credentials
 
 ![Screenshot](MspProvisionTbal.png)
 ![Screenshot](Save.png)
 
 
-и выходим из функции
+and exit from function
 
 ![Screenshot](savetn.png)
 
 
-любопытно, что MspProvisionTbal можно вызвать напрямую ( не через ConfigureUserArso )
-если посмотреть в ntsecapi.h
-то в
+curious that `MspProvisionTbal` can be called directly (not via `ConfigureUserArso` )
+if you look in ntsecapi.h
+then in
 ```
 MSV1_0_PROTOCOL_MESSAGE_TYPE
 ```
-есть
+exist
 
 ```
 #if (_WIN32_WINNT >= 0x0A00)
@@ -544,9 +541,9 @@ MSV1_0_PROTOCOL_MESSAGE_TYPE
     MsV1_0DeleteTbalSecrets,
 #endif
 ```
-то есть надо вызывать LsaCallAuthenticationPackage
+so need use `LsaCallAuthenticationPackage` api
 
-входная структура данных не документирована. но её не сложно понять
+the input data structure is not documented. but it's not hard to understand
 
 ```
 typedef struct MSV1_0_PROVISION_TBAL {
@@ -555,9 +552,9 @@ typedef struct MSV1_0_PROVISION_TBAL {
 } *PMSV1_0_PROVISION_TBAL;
 ```
 
-фактически в качестве параметра - нужно передать LUID LogonId; для которой мы хотим сохранить credentials. ну и понятно нам нужен TCB
+in fact, as a parameter - you need to pass LUID LogonId; for which we want to store the credentials. and, it’s clear we need TCB
 
-примерный код - 
+example code -
 
 ```
         HANDLE LsaHandle;
@@ -615,11 +612,10 @@ typedef struct MSV1_0_PROVISION_TBAL {
         }
 ```
 
-однако даже с TCB вызов LsaCallAuthenticationPackage возвращает STATUS_ACCESS_DENIED
-почему ?
-нужно опять отлаживать lsass. но в этой точке это элементарно - просто подключаем дебаггер к нему и смотрим
+however, even with TCB, call to `LsaCallAuthenticationPackage` returns `STATUS_ACCESS_DENIED`
+Why ? we need to debug lsass again. but at this point it's elementary - just connect the debugger to it and look
 
-оказывается в начале MspProvisionTbal есть такой код:
+it turns out that at the beginning of `MspProvisionTbal` there is this code:
 
 ```
         // PLSA_SECPKG_FUNCTION_TABLE gFunctionTable;
@@ -641,7 +637,7 @@ typedef struct MSV1_0_PROVISION_TBAL {
         }
 ```
 
-после вызова GetCallInfo ( в дереве вызовов это LsaIGetCallInfo) происходит проверка
+after calling `GetCallInfo` ( in call tree this is `LsaIGetCallInfo` ) was check:
 
 ```
 ci.Attributes & SECPKG_CALL_IN_PROC
@@ -649,15 +645,15 @@ ci.Attributes & SECPKG_CALL_IN_PROC
 
 [SECPKG_CALL_INFO](https://learn.microsoft.com/ru-ru/windows/win32/api/ntsecpkg/ns-ntsecpkg-secpkg_call_info)
 
-то есть если вызов rpc - происходит дополнительная проверка, на ... наличие активного kernel debugger
-и дальше код выполняется лишь при наличии дебагера ( обычно бывает наоборот..)
+that is, if the rpc call is an additional check, for ... the presence of an active kernel debugger
+and then the code is executed only if there is a debugger (usually the opposite happens ..)
 
-вот поэтому мы и получаем STATUS_ACCESS_DENIED
-в случае же вызова ConfigureUserArso происходит вызов LsapConfigureArso и оттуда LsaICallPackageEx
-это внутренний вызов и SECPKG_CALL_IN_PROC будет стоять..
+that's why we get `STATUS_ACCESS_DENIED`
+if `ConfigureUserArso` is called, `LsapConfigureArso` is called and from there `LsaICallPackageEx`
+this is an internal call and `SECPKG_CALL_IN_PROC` will stand..
 
 ******************************************************************************************************
-пример самостоятельного вызова ConfigureUserArso
+example of call `ConfigureUserArso`
 
 ```
 EXTERN_C
@@ -737,15 +733,15 @@ HRESULT ConfigureUserArso()
 }
 ```
 ***********************************************************************************************
-так же winlogonext.dll экспортирует другую функцию
+also winlogonext.dll export another api
 ```
 EXTERN_C
 WINBASEAPI
 NTSTATUS WINAPI NotifyInteractiveSessionLogoff(_In_ PLUID LogonId);
 ```
-её вызов - это rpc (alpc) вызов в lsasrv.dll внутри lsass. вызывается функция LsarInteractiveSessionIsLoggedOff
+it do rpc (alpc) call to lsasrv.dll inside lsass. called function `LsarInteractiveSessionIsLoggedOff`
 
-её реализация
+it implementation :
 
 ```
 NTSTATUS LsapCheckCallerPrivilege(PVOID, ULONG);// check for SE_TCB_PRIVILEGE
@@ -778,9 +774,9 @@ void LsapArsoNotifyUserLogoff(_In_ PSID UserSid)
     }
 }
 ```
-которая удаляет и обнуляет g_ArsoSid , установленный в UpdateARSOSid
+which deletes and nulls `g_ArsoSid` , established in `UpdateARSOSid`
 
-NotifyInteractiveSessionLogoff также вызывается из WLGeneric_Logging_Off_Execute :
+`NotifyInteractiveSessionLogoff` also called from `WLGeneric_Logging_Off_Execute` :
 
 WLGeneric_Logging_Off_Execute(StateMachineCallContext *) {
        *******************
@@ -792,7 +788,7 @@ WLGeneric_Logging_Off_Execute(StateMachineCallContext *) {
 
 
 ******************************************************************************************************
-некоторые утилитные функции
+some utilit fuctions
 ```
 CRITICAL_SECTION g_autoLogonCritSec;
 BOOLEAN g_bSecrets = FALSE;
@@ -937,7 +933,7 @@ NTSTATUS LsapConfigureCloudCache(LUID LogonId)
 }
 ```
 
-любопытно что очистка есть только для LocalAccount но её не существует для cloud
+it is curious that cleaning is only for LocalAccount but it does not exist for cloud
 
 ```
 void CleanupPreviousSecrets(PSID UserSid)
@@ -985,10 +981,10 @@ NTSTATUS LsapDeleteLocalAccountSecrets()
     return status;
 }
 ```
-функции же LsapDeleteCloudSecrets() просто нет..
+and no `LsapDeleteCloudSecrets()` function..
 
 
-CleanupPreviousSecrets вызывается только из
+CleanupPreviousSecrets called only from
 ```
 void LsapArsoNotifyUserLogon(_In_ LUID LogonId)
 {
@@ -1070,13 +1066,13 @@ void LsapArsoNotifyUserLogon(LUID LogonId)
 ```
 NTSTATUS LsapIsSystemArsoAllowed(_In_ BOOLEAN bLog, _Out_ PBOOL pbAllowed, _Out_opt_ PBOOL pbSecure);
 ```
-сама эта api вызывает 2 других
+this api called 2 another
 ```
 NTSTATUS IsDeviceManaged(_In_ BOOLEAN bLog, _Out_ PBOOL bManaged, _Out_ PBOOL bInDomain);
 NTSTATUS [IsDeviceSecure](https://github.com/rbmm/TVI/blob/main/DEMO/IsDeviceSecure.tvi)(_In_ BOOLEAN bLog, _Out_ PBOOL bSecure);
 ```
 
-IsDeviceManaged сначала проверяет, входит ли машина в домен - сначала обычный а затем cloud, и если входит - то bManaged = TRUE
+IsDeviceManaged first checks if the machine is in the domain - first regular and then cloud, and if it is, then bManaged = TRUE
 ( DeviceRegistrationStateApi::IsJoined / DsrIsWorkplaceJoined
     DeviceRegistrationStateApi::GetJoinCertificate
        RegistrationCertStatus::GetDeviceCertificate
@@ -1087,22 +1083,22 @@ IsDeviceManaged сначала проверяет, входит ли машин�
            
             https://aadinternals.com/post/deviceidentity/ )
 			
-если машина ни в какой домен не входит - вызывается [IsDeviceRegisteredWithManagement](https://learn.microsoft.com/en-us/windows/win32/api/mdmregistration/nf-mdmregistration-isdeviceregisteredwithmanagement) -> OmaDmEnumerateAccounts
+if the machine is not included in any domain, it is called [IsDeviceRegisteredWithManagement](https://learn.microsoft.com/en-us/windows/win32/api/mdmregistration/nf-mdmregistration-isdeviceregisteredwithmanagement) -> OmaDmEnumerateAccounts
 
 Checks whether the device is registered with an MDM service.
 If the device is registered, it also returns the user principal name (UPN) of the registered user.
 
-в зависимости от [RtlIsStateSeparationEnabled](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntddk/nf-ntddk-rtlisstateseparationenabled)
+depending on the [RtlIsStateSeparationEnabled](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntddk/nf-ntddk-rtlisstateseparationenabled)
 
-смотрит в SOFTWARE\Microsoft\Provisioning\OMADM\Accounts или в
-OSData\SOFTWARE\Microsoft\Provisioning\OMADM\Accounts
+looking at `SOFTWARE\Microsoft\Provisioning\OMADM\Accounts` or in
+`OSData\SOFTWARE\Microsoft\Provisioning\OMADM\Accounts`
 
-в общем если device не managment - то ARSO allowed
-если же managment - то только при условии что он не в домене и [IsDeviceSecure](https://github.com/rbmm/TVI/blob/main/DEMO/IsDeviceSecure.tvi)
-api фактически проверяет системный том ( where SystemWindowsDirectory located) на наличие активного BitLocker
+in general, if the device is not manage - then ARSO allowed
+if managment - then only on condition that it is not in the domain and [IsDeviceSecure](https://github.com/rbmm/TVI/blob/main/DEMO/IsDeviceSecure.tvi)
+api actually checks the system volume ( where SystemWindowsDirectory located) for an active BitLocker
 
-в общем проверка несколько запутанна, если я правильно понял:
-если устройство в домене - ARSO запрещён
-если DeviceManaged - только при условии DeviceSecure - тоесть BitLocker на системном томе
-ну а если обычная WorkStation - тоесть не в домене и не managed - ARSO is allowed.
-а разрешено ли оно для конкретного пользователя, уже определяется в LsaIsUserArsoEnabled
+in general, the check is somewhat confusing, if I understand correctly:
+if the device is in a domain - ARSO is prohibited
+if DeviceManaged - only if DeviceSecure - i.e. BitLocker on the system volume
+well, if the usual WorkStation - that is, not in the domain and not managed - ARSO is allowed.
+and whether it is allowed for a particular user is already defined in LsaIsUserArsoEnabled
