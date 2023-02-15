@@ -502,7 +502,7 @@ ARSO not allowed
 NTSTATUS LsapConfigureLocalAccount(_In_ LUID LogonId);
 ```
 
-или 
+or 
 
 ```
 NTSTATUS LsapConfigureCloudCache(_In_ LUID LogonId);
@@ -758,7 +758,7 @@ NTSTATUS LsarInteractiveSessionIsLoggedOff(PVOID , _In_ PLUID LogonId)
     return status;
 }
 ```
-внутри LsapScheduleLogonSessionLeakCheck вызывается
+inside `LsapScheduleLogonSessionLeakCheck` called
 ```
 void LsapArsoNotifyUserLogoff(_In_ PSID UserSid)
 {
