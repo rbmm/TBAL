@@ -187,7 +187,7 @@ the password was `_TBAL_{68EDDCF5-0AEB-4C28-A770-AF5302ECA3C9}`
 so we got something unique to search in google. little information, but it is there
 - [DPAPI security flaw in Windows 10](https://www.passcape.com/index.php?section=blog&cmd=details&id=38)
 * [TBAL: an (accidental?) DPAPI Backdoor for local users](https://vztekoverflow.com/2018/07/31/tbal-dpapi-backdoor/)
-+ [Winlogon automatic restart sign-on (ARSO)](https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/manage/component-updates/winlogon-automatic-restart-sign -on--arso-)
++ [Winlogon automatic restart sign-on (ARSO)](https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/manage/component-updates/winlogon-automatic-restart-sign-on--arso-)
 
 in principle, almost everything has already been described, but - you can still see in all the details
 
