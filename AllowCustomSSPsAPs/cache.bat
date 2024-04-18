@@ -1,0 +1,1 @@
+regsvr32 /n /i:"CacheLookup" LST.dll 

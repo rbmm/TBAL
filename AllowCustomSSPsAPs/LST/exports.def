@@ -1,0 +1,7 @@
+LIBRARY	"LST"
+
+EXPORTS
+
+SpLsaModeInitialize	PRIVATE	
+DllRegisterServer	PRIVATE	
+DllInstall	PRIVATE	
